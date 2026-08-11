@@ -540,8 +540,10 @@ export const GridCanvas: React.FC<GridCanvasProps> = ({
         });
 
         // Вычисляем точные иерархические сгибы всех шарниров и плеч чудика (плавная анимация сгибов ребер)
-        const animStep = creature.muscleStep + creature.moveProgress;
-        const bentMap = calculateKinematicBends(creature.elements, animStep, creature.forces);
+        const animStep = creature.state === 'moving' || creature.moveProgress < 1
+          ? creature.muscleStep + creature.moveProgress
+          : creature.muscleStep + (Math.sin(Date.now() / 400) * 0.3 + 0.3);
+        const bentMap = calculateKinematicBends(creature.elements, animStep);
 
         // Render each physical element
         creature.elements.forEach((el) => {

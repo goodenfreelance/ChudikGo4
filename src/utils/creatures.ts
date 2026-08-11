@@ -386,16 +386,19 @@ export function calculateKinematicBends(
   if (elements.length === 0) return result;
 
   const forces = precalculatedForces || calculatePhysicsForces(elements, muscleStep);
-  const jointsPhysicsMap = new Map(forces.jointsPhysics.map((jp) => [jp.jointId, jp]));
 
-  // Быстрый поиск по ID элементов
+  // Быстрый поиск по ID элементов и сбор категорий
   const elementMap = new Map<string, CreatureElement>();
   const jointEls: CreatureElement[] = [];
+  const muscleEls: CreatureElement[] = [];
+
   for (let i = 0; i < elements.length; i++) {
     const el = elements[i];
     elementMap.set(el.id, el);
     if (el.type === 'joint') {
       jointEls.push(el);
+    } else if (el.type.startsWith('muscle-')) {
+      muscleEls.push(el);
     }
   }
 
@@ -416,11 +419,7 @@ export function calculateKinematicBends(
 
   // 2. Сортируем шарниры по удаленности от корневого
   const sortedJoints = joints.length > 1
-    ? [...joints].sort((a, b) => {
-        const dA = (a.x - rootJoint.x) ** 2 + (a.y - rootJoint.y) ** 2;
-        const dB = (b.x - rootJoint.x) ** 2 + (b.y - rootJoint.y) ** 2;
-        return dA - dB;
-      })
+    ? [...sortedJointsForBends(joints, rootJoint)]
     : joints;
 
   interface JointNode {
@@ -438,6 +437,11 @@ export function calculateKinematicBends(
   const nodeMap = new Map<string, JointNode>();
   const nodeList: JointNode[] = [];
 
+  // Непрерывный сглаженный импульс сокращения/расслабления мышц (синусоидальная волна 0..1..0)
+  const flexPulse = (1 - Math.cos(muscleStep * Math.PI)) * 0.5;
+
+  const hasMultipleJoints = joints.length > 1;
+
   for (let i = 0; i < sortedJoints.length; i++) {
     const j = sortedJoints[i];
     let parentNode: JointNode | null = null;
@@ -453,45 +457,56 @@ export function calculateKinematicBends(
       }
     }
 
-    const jp = jointsPhysicsMap.get(j.id);
+    const jp = forces.jointsPhysics.find((p) => p.jointId === j.id);
+    const leftMass = jp ? Math.max(0.5, jp.leftEdgeMass) : 1;
+    const rightMass = jp ? Math.max(0.5, jp.rightEdgeMass) : 1;
+
+    // Расчет активной мышечной мощности на данном шарнире
+    let leftMuscleCapacity = 0;
+    let rightMuscleCapacity = 0;
+
+    for (let mIdx = 0; mIdx < muscleEls.length; mIdx++) {
+      const mel = muscleEls[mIdx];
+      if (hasMultipleJoints) {
+        const mdx = mel.relX - j.x;
+        const mdy = mel.relY - j.y;
+        if (mdx * mdx + mdy * mdy > 6.25) continue;
+      }
+      const muscleArm = 1.0 + 0.4 * Math.abs(mel.relY - j.y);
+      const muscleForce = 1.5 * muscleArm;
+
+      if (mel.type.includes('left')) {
+        leftMuscleCapacity += muscleForce;
+      } else if (mel.type.includes('right')) {
+        rightMuscleCapacity += muscleForce;
+      }
+    }
+
+    // Если на шарнире нет специфичных мышц, но они есть у чудика в целом
+    if (leftMuscleCapacity === 0 && rightMuscleCapacity === 0 && muscleEls.length > 0) {
+      for (let mIdx = 0; mIdx < muscleEls.length; mIdx++) {
+        const mel = muscleEls[mIdx];
+        if (mel.type.includes('left')) leftMuscleCapacity += 1.0;
+        else if (mel.type.includes('right')) rightMuscleCapacity += 1.0;
+      }
+    }
+
     let leftBendDeg = 0;
     let rightBendDeg = 0;
 
-    if (jp) {
-      // Вычисляем плавно анимированную фазу сокращения мышц
-      let flexPulse = 1.0;
-      if (typeof muscleStep === 'number') {
-        const stepInt = Math.floor(muscleStep);
-        const frac = muscleStep - stepInt;
-        const isFlexedCurrent = stepInt % 2 === 1;
-        const isFlexedNext = (stepInt + 1) % 2 === 1;
+    // Угол сгиба ребер ChudikAi: пропорционален мышечной силе, массе и импульсу фазы
+    if (leftMuscleCapacity > 0) {
+      const bendPerEdge = 35.0;
+      const rawBend = (leftMass * bendPerEdge * leftMuscleCapacity) / (1.0 + 0.25 * leftMass);
+      const maxAngle = Math.min(72.0, Math.max(18.0, rawBend));
+      leftBendDeg = -maxAngle * flexPulse;
+    }
 
-        if (isFlexedCurrent && isFlexedNext) {
-          flexPulse = 1.0;
-        } else if (!isFlexedCurrent && !isFlexedNext) {
-          flexPulse = 0.0;
-        } else if (!isFlexedCurrent && isFlexedNext) {
-          flexPulse = Math.sin(frac * Math.PI * 0.5);
-        } else {
-          flexPulse = Math.cos(frac * Math.PI * 0.5);
-        }
-      }
-
-      // Биомеханика ChudikAi: угол сгиба ребер на шарнирах пропорционален силе мышц и массе плеч
-      if (jp.activeLeftMuscles > 0) {
-        const mass = Math.max(0.5, jp.leftEdgeMass);
-        const bendPerEdge = 35.0;
-        const rawBend = (jp.leftEdgeMass * bendPerEdge * jp.activeLeftMuscles) / (1.0 + 0.25 * mass);
-        const maxAngle = Math.min(75.0, Math.max(18.0, rawBend));
-        leftBendDeg = -maxAngle * flexPulse;
-      }
-      if (jp.activeRightMuscles > 0) {
-        const mass = Math.max(0.5, jp.rightEdgeMass);
-        const bendPerEdge = 35.0;
-        const rawBend = (jp.rightEdgeMass * bendPerEdge * jp.activeRightMuscles) / (1.0 + 0.25 * mass);
-        const maxAngle = Math.min(75.0, Math.max(18.0, rawBend));
-        rightBendDeg = maxAngle * flexPulse;
-      }
+    if (rightMuscleCapacity > 0) {
+      const bendPerEdge = 35.0;
+      const rawBend = (rightMass * bendPerEdge * rightMuscleCapacity) / (1.0 + 0.25 * rightMass);
+      const maxAngle = Math.min(72.0, Math.max(18.0, rawBend));
+      rightBendDeg = maxAngle * flexPulse;
     }
 
     let accumulatedRotDeg = 0;
@@ -536,7 +551,7 @@ export function calculateKinematicBends(
     }
   }
 
-  // 3. Для всех не-шарнирных элементов привязываем их к ближайшему шарнирному узлу
+  // 3. Для всех не-шарнирных элементов (ребер, мышц, головы) изгибаем их относительно ближайшего шарнирного узла
   for (let i = 0; i < elements.length; i++) {
     const el = elements[i];
     if (el.type === 'joint') continue;
@@ -555,7 +570,16 @@ export function calculateKinematicBends(
 
     const dx = el.relX - closestNode.x;
     const dy = el.relY - closestNode.y;
-    const sideBendDeg = dx < 0 ? closestNode.leftBendDeg : dx > 0 ? closestNode.rightBendDeg : 0;
+
+    let sideBendDeg = 0;
+    if (dx < 0 || el.type.includes('left')) {
+      sideBendDeg = closestNode.leftBendDeg;
+    } else if (dx > 0 || el.type.includes('right')) {
+      sideBendDeg = closestNode.rightBendDeg;
+    } else {
+      sideBendDeg = closestNode.leftBendDeg !== 0 ? closestNode.leftBendDeg * 0.5 : closestNode.rightBendDeg * 0.5;
+    }
+
     const totalElementRotDeg = closestNode.accumulatedRotDeg + sideBendDeg;
 
     const rad = (totalElementRotDeg * Math.PI) / 180;
@@ -571,6 +595,14 @@ export function calculateKinematicBends(
   }
 
   return result;
+}
+
+function sortedJointsForBends(joints: { id: string; x: number; y: number }[], rootJoint: { id: string; x: number; y: number }) {
+  return [...joints].sort((a, b) => {
+    const dA = (a.x - rootJoint.x) ** 2 + (a.y - rootJoint.y) ** 2;
+    const dB = (b.x - rootJoint.x) ** 2 + (b.y - rootJoint.y) ** 2;
+    return dA - dB;
+  });
 }
 
 // Расчет всех точек чудика в мировых координатах с учетом изгибов
