@@ -126,6 +126,15 @@ export function determineCreatureHeadAngle(elements: CreatureElement[]): number 
 export function calculatePhysicsForces(elements: CreatureElement[], muscleActiveStep: number = 0): PhysicsForces {
   const isMuscleContracted = muscleActiveStep % 2 === 1;
 
+  const headAngle = determineCreatureHeadAngle(elements);
+  const headRad = (headAngle * Math.PI) / 180;
+
+  // Local unit vectors relative to head orientation
+  const fx = Math.cos(headRad);
+  const fy = Math.sin(headRad);
+  const lx = fy;
+  const ly = -fx;
+
   const joints: { id: string; x: number; y: number }[] = [];
   const edgeElements: CreatureElement[] = [];
   const muscleElements: CreatureElement[] = [];
@@ -157,8 +166,9 @@ export function calculatePhysicsForces(elements: CreatureElement[], muscleActive
     const rSq = el.relX * el.relX + el.relY * el.relY;
     totalInertia += elWeight * rSq;
 
-    if (el.relX < 0) totalLeftMass += elWeight;
-    else if (el.relX > 0) totalRightMass += elWeight;
+    const projLeft = el.relX * lx + el.relY * ly;
+    if (projLeft > 0.01) totalLeftMass += elWeight;
+    else if (projLeft < -0.01) totalRightMass += elWeight;
     else {
       totalLeftMass += elWeight * 0.5;
       totalRightMass += elWeight * 0.5;
@@ -191,14 +201,17 @@ export function calculatePhysicsForces(elements: CreatureElement[], muscleActive
       const el = edgeElements[eIdx];
       const weight = 1;
       const dx = el.relX - j.x;
+      const dy = el.relY - j.y;
 
-      if (dx < 0) {
-        const arm = -dx;
+      const projLeft = dx * lx + dy * ly;
+
+      if (projLeft > 0.01) {
+        const arm = projLeft;
         const leverMultiplier = 1 + 0.5 * (arm - 1);
         jLeftMass += weight;
         jLeftTorquePotential += weight * leverMultiplier;
-      } else if (dx > 0) {
-        const arm = dx;
+      } else if (projLeft < -0.01) {
+        const arm = -projLeft;
         const leverMultiplier = 1 + 0.5 * (arm - 1);
         jRightMass += weight;
         jRightTorquePotential += weight * leverMultiplier;
@@ -235,7 +248,11 @@ export function calculatePhysicsForces(elements: CreatureElement[], muscleActive
       }
 
       if (providesTorque) {
-        const muscleArm = 1.0 + 0.4 * Math.abs(el.relY - j.y);
+        const mdx = el.relX - j.x;
+        const mdy = el.relY - j.y;
+        const spineDist = Math.abs(mdx * fx + mdy * fy);
+
+        const muscleArm = 1.0 + 0.4 * spineDist;
         const muscleForce = 1.5 * muscleArm;
 
         if (el.type.includes('left')) {
@@ -436,6 +453,14 @@ export function calculateKinematicBends(
 
   const jointDataMap = new Map<string, JointData>();
 
+  // Local unit vectors relative to head orientation
+  const headAngle = determineCreatureHeadAngle(elements);
+  const headRad = (headAngle * Math.PI) / 180;
+  const fx = Math.cos(headRad);
+  const fy = Math.sin(headRad);
+  const lx = fy;
+  const ly = -fx;
+
   // 2. Рассчитываем физические свойства каждого шарнира (массы и сгибы)
   for (let i = 0; i < joints.length; i++) {
     const j = joints[i];
@@ -447,8 +472,10 @@ export function calculateKinematicBends(
     for (let eIdx = 0; eIdx < edgeEls.length; eIdx++) {
       const eel = edgeEls[eIdx];
       const dx = eel.relX - j.x;
-      if (dx < 0) leftMass += 1.0;
-      else if (dx > 0) rightMass += 1.0;
+      const dy = eel.relY - j.y;
+      const projLeft = dx * lx + dy * ly;
+      if (projLeft > 0.01) leftMass += 1.0;
+      else if (projLeft < -0.01) rightMass += 1.0;
       else {
         leftMass += 0.5;
         rightMass += 0.5;
@@ -478,7 +505,10 @@ export function calculateKinematicBends(
 
       if (!isFlexed) continue;
 
-      const muscleArm = 1.0 + 0.4 * Math.abs(mel.relY - j.y);
+      const mdx = mel.relX - j.x;
+      const mdy = mel.relY - j.y;
+      const spineDist = Math.abs(mdx * fx + mdy * fy);
+      const muscleArm = 1.0 + 0.4 * spineDist;
       const forceVal = 1.5 * muscleArm;
 
       if (mel.type.includes('left')) {
@@ -555,10 +585,12 @@ export function calculateKinematicBends(
     }
 
     const dx = j.x - parentData.x;
+    const dy = j.y - parentData.y;
+    const projLeft = dx * lx + dy * ly;
     let bendOffset = 0;
-    if (dx < 0) {
+    if (projLeft > 0.01) {
       bendOffset = parentData.leftBendDeg;
-    } else if (dx > 0) {
+    } else if (projLeft < -0.01) {
       bendOffset = parentData.rightBendDeg;
     } else {
       bendOffset = 0; // На оси позвоночника
@@ -615,11 +647,12 @@ export function calculateKinematicBends(
 
     const dx = el.relX - closestJoint.x;
     const dy = el.relY - closestJoint.y;
+    const projLeft = dx * lx + dy * ly;
 
     let sideBendDeg = 0;
-    if (dx < 0 || el.type.includes('left')) {
+    if (projLeft > 0.01 || el.type.includes('left')) {
       sideBendDeg = closestJoint.leftBendDeg;
-    } else if (dx > 0 || el.type.includes('right')) {
+    } else if (projLeft < -0.01 || el.type.includes('right')) {
       sideBendDeg = closestJoint.rightBendDeg;
     } else {
       sideBendDeg = 0;

@@ -146,6 +146,15 @@ func DetermineCreatureHeadAngle(elements []CreatureElement) float64 {
 func CalculatePhysicsForces(elements []CreatureElement, muscleActiveStep int) PhysicsForces {
 	isMuscleContracted := muscleActiveStep%2 == 1
 
+	headAngle := DetermineCreatureHeadAngle(elements)
+	headRad := (headAngle * math.Pi) / 180.0
+
+	// Local unit vectors relative to head orientation
+	fx := math.Cos(headRad)
+	fy := math.Sin(headRad)
+	lx := fy
+	ly := -fx
+
 	type JointNode struct {
 		ID string
 		X  float64
@@ -182,9 +191,10 @@ func CalculatePhysicsForces(elements []CreatureElement, muscleActiveStep int) Ph
 		rSq := el.RelX*el.RelX + el.RelY*el.RelY
 		totalInertia += elWeight * rSq
 
-		if el.RelX < 0 {
+		projLeft := el.RelX*lx + el.RelY*ly
+		if projLeft > 0.01 {
 			totalLeftMass += elWeight
-		} else if el.RelX > 0 {
+		} else if projLeft < -0.01 {
 			totalRightMass += elWeight
 		} else {
 			totalLeftMass += elWeight * 0.5
@@ -217,14 +227,17 @@ func CalculatePhysicsForces(elements []CreatureElement, muscleActiveStep int) Ph
 		for _, el := range edgeElements {
 			weight := 1.0
 			dx := el.RelX - j.X
+			dy := el.RelY - j.Y
 
-			if dx < 0 {
-				arm := -dx
+			projLeft := dx*lx + dy*ly
+
+			if projLeft > 0.01 {
+				arm := projLeft
 				leverMultiplier := 1.0 + 0.5*(arm-1.0)
 				jLeftMass += weight
 				jLeftTorquePotential += weight * leverMultiplier
-			} else if dx > 0 {
-				arm := dx
+			} else if projLeft < -0.01 {
+				arm := -projLeft
 				leverMultiplier := 1.0 + 0.5*(arm-1.0)
 				jRightMass += weight
 				jRightTorquePotential += weight * leverMultiplier
@@ -261,7 +274,11 @@ func CalculatePhysicsForces(elements []CreatureElement, muscleActiveStep int) Ph
 			}
 
 			if providesTorque {
-				muscleArm := 1.0 + 0.4*math.Abs(el.RelY-j.Y)
+				mdx := el.RelX - j.X
+				mdy := el.RelY - j.Y
+				spineDist := math.Abs(mdx*fx + mdy*fy)
+
+				muscleArm := 1.0 + 0.4*spineDist
 				muscleForce := 1.5 * muscleArm
 
 				if strings.Contains(string(el.Type), "left") {

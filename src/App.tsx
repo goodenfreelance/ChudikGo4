@@ -398,8 +398,9 @@ export default function App() {
         prev.map((c) => {
           if (c.id === controlledCreatureId) {
             const rad = (c.angleDeg * Math.PI) / 180;
-            const nx = c.x + Math.cos(rad) * 1.0;
-            const ny = c.y + Math.sin(rad) * 1.0;
+            const step = c.forces?.forwardSpeed || 0.25;
+            const nx = c.x + Math.cos(rad) * step;
+            const ny = c.y + Math.sin(rad) * step;
             gameWs.sendAdminControlInput(controlledCreatureId, c.angleDeg, nx, ny, true, false);
             return {
               ...c,
@@ -422,8 +423,9 @@ export default function App() {
       prev.map((c) => {
         if (c.id === targetId) {
           const rad = (c.angleDeg * Math.PI) / 180;
-          const nx = c.x + Math.cos(rad) * 1.0;
-          const ny = c.y + Math.sin(rad) * 1.0;
+          const step = c.forces?.forwardSpeed || 0.25;
+          const nx = c.x + Math.cos(rad) * step;
+          const ny = c.y + Math.sin(rad) * step;
           gameWs.sendInput(c.angleDeg, nx, ny, true, false);
           return {
             ...c,
