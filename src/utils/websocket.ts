@@ -4,6 +4,7 @@ export type FoodType = 'berry' | 'super' | 'golden';
 
 export interface ServerStats {
   tickRate: number;
+  tickIntervalMs?: number;
   activePlayers: number;
   activeBots: number;
   totalCreatures: number;
@@ -195,6 +196,59 @@ export class GameWebSocket {
       foodX: x,
       foodY: y,
       foodType,
+    });
+  }
+
+  // ================= ADMIN COMMANDS =================
+  public sendAdminSetSpeed(speedMs: number) {
+    this.send({
+      type: 'admin_set_speed',
+      speedMs,
+    });
+  }
+
+  public sendAdminDeleteCreature(targetCreatureId: string) {
+    this.send({
+      type: 'admin_delete_creature',
+      targetCreatureId,
+    });
+  }
+
+  public sendAdminControlInput(
+    targetCreatureId: string,
+    targetAngleDeg: number,
+    targetX: number,
+    targetY: number,
+    muscleContract: boolean = false,
+    dash: boolean = false
+  ) {
+    this.send({
+      type: 'admin_control_input',
+      targetCreatureId,
+      targetAngleDeg,
+      targetX,
+      targetY,
+      muscleContract,
+      dash,
+    });
+  }
+
+  public sendAdminSpawnCreature(name: string, color: string, elements: CreatureElement[], x: number, y: number) {
+    this.send({
+      type: 'admin_spawn_creature',
+      name,
+      color,
+      elements,
+      targetX: x,
+      targetY: y,
+    });
+  }
+
+  public sendAdminKickUser(targetPlayerId: string, reason: string = 'Кикнут администратором') {
+    this.send({
+      type: 'admin_kick_user',
+      targetPlayerId,
+      reason,
     });
   }
 

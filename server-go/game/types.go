@@ -81,6 +81,7 @@ type Creature struct {
 	PrevAngleDeg   float64           `json:"prevAngleDeg"`
 	Kills          int               `json:"kills"`
 	LastActive     time.Time         `json:"-"`
+	AdminControlledUntil time.Time   `json:"-"`
 }
 
 type FoodType string
@@ -113,6 +114,7 @@ type LeaderboardEntry struct {
 
 type ServerStats struct {
 	TickRate       float64 `json:"tickRate"`
+	TickIntervalMs int     `json:"tickIntervalMs"`
 	ActivePlayers  int     `json:"activePlayers"`
 	ActiveBots     int     `json:"activeBots"`
 	TotalCreatures int     `json:"totalCreatures"`
@@ -122,25 +124,29 @@ type ServerStats struct {
 }
 
 type WSInputMessage struct {
-	Type           string            `json:"type"` // "join", "input", "spawn_food", "chat", "ping"
-	Name           string            `json:"name,omitempty"`
-	Color          string            `json:"color,omitempty"`
-	Elements       []CreatureElement `json:"elements,omitempty"`
-	PresetIndex    int               `json:"presetIndex,omitempty"`
-	TargetAngleDeg *float64          `json:"targetAngleDeg,omitempty"`
-	TargetX        *float64          `json:"targetX,omitempty"`
-	TargetY        *float64          `json:"targetY,omitempty"`
-	MuscleContract bool              `json:"muscleContract,omitempty"`
-	Dash           bool              `json:"dash,omitempty"`
-	FoodX          *float64          `json:"foodX,omitempty"`
-	FoodY          *float64          `json:"foodY,omitempty"`
-	FoodType       FoodType          `json:"foodType,omitempty"`
-	ChatMessage    string            `json:"chatMessage,omitempty"`
-	ClientTime     int64             `json:"clientTime,omitempty"`
+	Type             string            `json:"type"` // "join", "input", "spawn_food", "chat", "ping", "admin_set_speed", "admin_delete_creature", "admin_control_input", "admin_spawn_creature", "admin_kick_user"
+	Name             string            `json:"name,omitempty"`
+	Color            string            `json:"color,omitempty"`
+	Elements         []CreatureElement `json:"elements,omitempty"`
+	PresetIndex      int               `json:"presetIndex,omitempty"`
+	TargetAngleDeg   *float64          `json:"targetAngleDeg,omitempty"`
+	TargetX          *float64          `json:"targetX,omitempty"`
+	TargetY          *float64          `json:"targetY,omitempty"`
+	MuscleContract   bool              `json:"muscleContract,omitempty"`
+	Dash             bool              `json:"dash,omitempty"`
+	FoodX            *float64          `json:"foodX,omitempty"`
+	FoodY            *float64          `json:"foodY,omitempty"`
+	FoodType         FoodType          `json:"foodType,omitempty"`
+	ChatMessage      string            `json:"chatMessage,omitempty"`
+	ClientTime       int64             `json:"clientTime,omitempty"`
+	TargetCreatureID string            `json:"targetCreatureId,omitempty"`
+	SpeedMs          int               `json:"speedMs,omitempty"`
+	TargetPlayerID   string            `json:"targetPlayerId,omitempty"`
+	Reason           string            `json:"reason,omitempty"`
 }
 
 type WSOutputMessage struct {
-	Type          string             `json:"type"` // "init", "state", "event", "chat", "pong"
+	Type          string             `json:"type"` // "init", "state", "event", "chat", "pong", "kicked"
 	YourID        string             `json:"yourId,omitempty"`
 	WorldRadius   float64            `json:"worldRadius,omitempty"`
 	Tick          uint64             `json:"tick,omitempty"`
@@ -156,6 +162,7 @@ type WSOutputMessage struct {
 	ChatTimestamp string             `json:"chatTimestamp,omitempty"`
 	ClientTime    int64              `json:"clientTime,omitempty"`
 	ServerTime    int64              `json:"serverTime,omitempty"`
+	KickedReason  string             `json:"kickedReason,omitempty"`
 }
 
 // =============================================

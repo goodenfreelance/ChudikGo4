@@ -113,6 +113,58 @@ func (h *Hub) handleMessage(client *Client, msg game.WSInputMessage) {
 		}
 		data, _ := json.Marshal(pongMsg)
 		client.send <- data
+
+	case "admin_set_speed":
+		if msg.SpeedMs > 0 {
+			h.room.SetTickInterval(msg.SpeedMs)
+			log.Printf("[WS ADMIN] Tick interval changed to %d ms", msg.SpeedMs)
+		}
+
+	case "admin_delete_creature":
+		if msg.TargetCreatureID != "" {
+			h.room.DeleteCreature(msg.TargetCreatureID)
+			log.Printf("[WS ADMIN] Deleted creature: %s", msg.TargetCreatureID)
+		}
+
+	case "admin_control_input":
+		if msg.TargetCreatureID != "" {
+			h.room.HandleAdminControlInput(msg.TargetCreatureID, msg)
+		}
+
+	case "admin_spawn_creature":
+		spawnX := 0.0
+		spawnY := 0.0
+		if msg.TargetX != nil {
+			spawnX = *msg.TargetX
+		}
+		if msg.TargetY != nil {
+			spawnY = *msg.TargetY
+		}
+		h.room.SpawnAdminCreature(msg.Name, msg.Color, msg.Elements, spawnX, spawnY)
+		log.Printf("[WS ADMIN] Spawned custom creature '%s' at (%.1f, %.1f)", msg.Name, spawnX, spawnY)
+
+	case "admin_kick_user":
+		if msg.TargetPlayerID != "" {
+			targetPid := msg.TargetPlayerID
+			reason := msg.Reason
+			if reason == "" {
+				reason = "Кикнут администратором"
+			}
+			h.room.RemovePlayer(targetPid)
+			h.mu.Lock()
+			if kickedClient, ok := h.clients[targetPid]; ok {
+				kickMsg := game.WSOutputMessage{
+					Type:         "kicked",
+					KickedReason: reason,
+				}
+				kData, _ := json.Marshal(kickMsg)
+				kickedClient.send <- kData
+				delete(h.clients, targetPid)
+				kickedClient.CloseSend()
+				log.Printf("[WS ADMIN] Kicked player: %s (Reason: %s)", targetPid, reason)
+			}
+			h.mu.Unlock()
+		}
 	}
 }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronUp, ChevronDown, Wifi, WifiOff } from 'lucide-react';
-import { Creature, CreatureElement, Food, GridTheme, SimulationStats, PendingPlacement, CreatureLogEntry, SavedPreset } from './types';
+import { Creature, CreatureElement, Food, GridTheme, SimulationStats, PendingPlacement, CreatureLogEntry, SavedPreset, User } from './types';
 import { createCreature, calculatePhysicsForces, determineCreatureHeadAngle, DEFAULT_PRESETS } from './utils/creatures';
 import { soundFx } from './utils/audio';
 import { gameWs, LeaderboardEntry, ServerStats, WSChatMessage } from './utils/websocket';
@@ -15,6 +15,7 @@ import { MultiplayerChat } from './components/MultiplayerChat';
 import { ServerLogsModal } from './components/ServerLogsModal';
 import { AuthModal } from './components/AuthModal';
 import { UserCreaturesModal } from './components/UserCreaturesModal';
+import { AdminPanel } from './components/AdminPanel';
 
 export default function App() {
   // Simulation State
@@ -54,9 +55,10 @@ export default function App() {
 
   // User Auth & DB Collection State
   const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem('creatures_auth_token'));
-  const [authUser, setAuthUser] = useState<{ id: string; username: string } | null>(null);
+  const [authUser, setAuthUser] = useState<User | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
   const [isUserCreaturesOpen, setIsUserCreaturesOpen] = useState<boolean>(false);
+  const [controlledCreatureId, setControlledCreatureId] = useState<string | null>(null);
 
   // Validate token on mount
   useEffect(() => {
@@ -279,6 +281,10 @@ export default function App() {
         }
       } else if (msg.type === 'chat') {
         setChatMessages((prev) => [...prev.slice(-30), msg]);
+      } else if (msg.type === 'kicked') {
+        alert(`Вас кикнул администратор! Причина: ${msg.kickedReason || 'Кикнут'}`);
+        gameWs.disconnect();
+        setIsConnected(false);
       }
     });
 
@@ -301,6 +307,13 @@ export default function App() {
         return;
       }
 
+      if (e.key === 'Escape') {
+        if (controlledCreatureId) {
+          setControlledCreatureId(null);
+        }
+        return;
+      }
+
       if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A' || e.key === 'ф' || e.key === 'Ф') {
         e.preventDefault();
         handleTurnPlayer('left');
@@ -314,19 +327,47 @@ export default function App() {
         e.preventDefault();
         // Dash boost
         soundFx.playFlex();
-        const yourC = (creatures || []).find((c) => c.id === yourCreatureId);
-        if (yourC) {
-          gameWs.sendInput(yourC.angleDeg, yourC.x, yourC.y, true, true);
+        if (controlledCreatureId) {
+          const c = (creatures || []).find((c) => c.id === controlledCreatureId);
+          if (c) {
+            gameWs.sendAdminControlInput(controlledCreatureId, c.angleDeg, c.x, c.y, true, true);
+          }
+        } else {
+          const yourC = (creatures || []).find((c) => c.id === yourCreatureId);
+          if (yourC) {
+            gameWs.sendInput(yourC.angleDeg, yourC.x, yourC.y, true, true);
+          }
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [yourCreatureId, creatures]);
+  }, [yourCreatureId, creatures, controlledCreatureId]);
 
   // Turn Player Creature
   const handleTurnPlayer = (dir: 'left' | 'right') => {
+    if (controlledCreatureId) {
+      soundFx.playTurn();
+      setCreatures((prev) =>
+        prev.map((c) => {
+          if (c.id === controlledCreatureId) {
+            const delta = dir === 'left' ? -45 : 45;
+            const nextAngle = (c.angleDeg + delta + 360) % 360;
+            gameWs.sendAdminControlInput(controlledCreatureId, nextAngle, c.x, c.y, true, false);
+            return {
+              ...c,
+              targetAngleDeg: nextAngle,
+              angleDeg: nextAngle,
+              muscleStep: c.muscleStep + 1,
+            };
+          }
+          return c;
+        })
+      );
+      return;
+    }
+
     const targetId = yourCreatureId || selectedCreatureId || creatures[0]?.id;
     if (!targetId) return;
 
@@ -351,6 +392,28 @@ export default function App() {
 
   // Move Player Forward
   const handleMovePlayerForward = () => {
+    if (controlledCreatureId) {
+      soundFx.playFlex();
+      setCreatures((prev) =>
+        prev.map((c) => {
+          if (c.id === controlledCreatureId) {
+            const rad = (c.angleDeg * Math.PI) / 180;
+            const nx = c.x + Math.cos(rad) * 1.0;
+            const ny = c.y + Math.sin(rad) * 1.0;
+            gameWs.sendAdminControlInput(controlledCreatureId, c.angleDeg, nx, ny, true, false);
+            return {
+              ...c,
+              x: nx,
+              y: ny,
+              muscleStep: c.muscleStep + 1,
+            };
+          }
+          return c;
+        })
+      );
+      return;
+    }
+
     const targetId = yourCreatureId || selectedCreatureId || creatures[0]?.id;
     if (!targetId) return;
 
@@ -675,6 +738,15 @@ export default function App() {
           onRemoveSavedPreset={(id) => {
             setSavedPresets((prev) => prev.filter((p) => p.id !== id));
           }}
+        />
+
+        {/* Admin Control Panel */}
+        <AdminPanel
+          user={authUser}
+          creatures={creatures}
+          stats={serverStats || undefined}
+          controlledCreatureId={controlledCreatureId}
+          setControlledCreatureId={setControlledCreatureId}
         />
       </div>
 

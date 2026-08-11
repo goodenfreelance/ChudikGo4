@@ -12,39 +12,53 @@ import (
 type EventCallback func(msg WSOutputMessage, targetPlayerID string)
 
 type Room struct {
-	mu            sync.RWMutex
-	worldRadius   float64
-	step          uint64
-	creatures     map[string]*Creature
-	foods         map[string]*Food
-	spatialGrid   *SpatialGrid
-	botController *BotController
-	broadcastCb   EventCallback
-	startTime     time.Time
-	lastTickTime  time.Time
-	minBots       int
-	maxFoods      int
-	rnd           *rand.Rand
+	mu             sync.RWMutex
+	worldRadius    float64
+	step           uint64
+	creatures      map[string]*Creature
+	foods          map[string]*Food
+	spatialGrid    *SpatialGrid
+	botController  *BotController
+	broadcastCb    EventCallback
+	startTime      time.Time
+	lastTickTime   time.Time
+	minBots        int
+	maxFoods       int
+	tickIntervalMs time.Duration
+	rnd            *rand.Rand
 }
 
 func NewRoom(worldRadius float64, minBots int, maxFoods int, cb EventCallback) *Room {
 	r := &Room{
-		worldRadius:   worldRadius,
-		step:          0,
-		creatures:     make(map[string]*Creature),
-		foods:         make(map[string]*Food),
-		spatialGrid:   NewSpatialGrid(10.0),
-		botController: NewBotController(),
-		broadcastCb:   cb,
-		startTime:     time.Now(),
-		lastTickTime:  time.Now(),
-		minBots:       minBots,
-		maxFoods:      maxFoods,
-		rnd:           rand.New(rand.NewSource(time.Now().UnixNano())),
+		worldRadius:    worldRadius,
+		step:           0,
+		creatures:      make(map[string]*Creature),
+		foods:          make(map[string]*Food),
+		spatialGrid:    NewSpatialGrid(10.0),
+		botController:  NewBotController(),
+		broadcastCb:    cb,
+		startTime:      time.Now(),
+		lastTickTime:   time.Now(),
+		minBots:        minBots,
+		maxFoods:       maxFoods,
+		tickIntervalMs: 50 * time.Millisecond, // Default ~20 Hz
+		rnd:            rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 
 	r.initWorld()
 	return r
+}
+
+func (r *Room) SetTickInterval(ms int) {
+	if ms < 10 {
+		ms = 10
+	}
+	if ms > 500 {
+		ms = 500
+	}
+	r.mu.Lock()
+	r.tickIntervalMs = time.Duration(ms) * time.Millisecond
+	r.mu.Unlock()
 }
 
 func (r *Room) initWorld() {
@@ -179,6 +193,11 @@ func (r *Room) HandleInput(playerID string, msg WSInputMessage) {
 		return
 	}
 
+	// Если админ активен на этом чудике — отключаем управление от игрока!
+	if c.AdminControlledUntil.After(time.Now()) {
+		return
+	}
+
 	c.LastActive = time.Now()
 
 	if msg.TargetAngleDeg != nil {
@@ -199,6 +218,92 @@ func (r *Room) HandleInput(playerID string, msg WSInputMessage) {
 	} else {
 		c.State = "moving"
 	}
+}
+
+func (r *Room) HandleAdminControlInput(targetCreatureID string, msg WSInputMessage) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	c, exists := r.creatures[targetCreatureID]
+	if !exists {
+		return
+	}
+
+	c.LastActive = time.Now()
+	// Перехват управления админом на 5 секунд с момента последнего нажатия клавиши движения
+	c.AdminControlledUntil = time.Now().Add(5 * time.Second)
+
+	if msg.TargetAngleDeg != nil {
+		c.TargetAngleDeg = *msg.TargetAngleDeg
+	}
+	if msg.TargetX != nil && msg.TargetY != nil {
+		c.TargetX = *msg.TargetX
+		c.TargetY = *msg.TargetY
+	}
+
+	if msg.MuscleContract {
+		c.MuscleStep++
+	}
+
+	if msg.Dash && c.Energy > 15 {
+		c.Energy -= 8
+		c.State = "dashing"
+	} else {
+		c.State = "moving"
+	}
+}
+
+func (r *Room) DeleteCreature(creatureID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.creatures, creatureID)
+}
+
+func (r *Room) SpawnAdminCreature(name, color string, elements []CreatureElement, x, y float64) *Creature {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	cID := fmt.Sprintf("npc-admin-%d-%d", time.Now().UnixNano(), r.rnd.Intn(10000))
+	if name == "" {
+		name = "Админ-Чудик"
+	}
+	if color == "" {
+		color = "#ef4444"
+	}
+
+	forces := CalculatePhysicsForces(elements, 0)
+	angle := DetermineCreatureHeadAngle(elements)
+
+	creature := Creature{
+		ID:             cID,
+		PlayerID:       "admin",
+		Name:           name,
+		Color:          color,
+		IsBot:          false,
+		X:              x,
+		Y:              y,
+		AngleDeg:       angle,
+		TargetAngleDeg: angle,
+		TargetX:        x,
+		TargetY:        y,
+		Energy:         200,
+		MaxEnergy:      200,
+		FoodEaten:      0,
+		Score:          150,
+		StepsCount:     0,
+		MuscleStep:     0,
+		State:          "idle",
+		Elements:       elements,
+		Forces:         forces,
+		PrevX:          x,
+		PrevY:          y,
+		PrevAngleDeg:   angle,
+		Kills:          0,
+		LastActive:     time.Now(),
+	}
+
+	r.creatures[cID] = &creature
+	return &creature
 }
 
 func (r *Room) addFoodAtUnsafe(x, y float64, foodType FoodType) {
@@ -228,14 +333,18 @@ func (r *Room) AddFoodAt(x, y float64, foodType FoodType) {
 }
 
 func (r *Room) StartLoop() {
-	ticker := time.NewTicker(33 * time.Millisecond) // ~30 Hz tick rate
 	go func() {
 		defer func() {
 			if rec := recover(); rec != nil {
 				fmt.Printf("[PANIC RECOVERY] Room Tick loop recovered: %v\n", rec)
 			}
 		}()
-		for range ticker.C {
+		for {
+			r.mu.RLock()
+			interval := r.tickIntervalMs
+			r.mu.RUnlock()
+
+			time.Sleep(interval)
 			r.safeTick()
 		}
 	}()
@@ -392,8 +501,12 @@ func (r *Room) Tick() {
 	// 7. Build leaderboard + stats
 	leaderboard := r.buildLeaderboard()
 
+	intervalMs := int(r.tickIntervalMs / time.Millisecond)
+	calcTickRate := 1000.0 / float64(intervalMs)
+
 	stats := ServerStats{
-		TickRate:       30.0,
+		TickRate:       calcTickRate,
+		TickIntervalMs: intervalMs,
 		ActivePlayers:  len(r.creatures) - currentBots,
 		ActiveBots:     currentBots,
 		TotalCreatures: len(r.creatures),

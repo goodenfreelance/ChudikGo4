@@ -12,6 +12,7 @@ export interface DBUser {
   username: string;
   passwordHash: string;
   createdAt: string;
+  isAdmin?: boolean;
 }
 
 export interface DBCreature {
@@ -95,12 +96,23 @@ export class UsersDatabase {
       }
     }
 
+    // Seed Admin user 'joni' with password 'PinokiO' if not exists
+    const adminUser = database.prepare('SELECT id FROM users WHERE username = ?').get('joni');
+    if (!adminUser) {
+      const salt = bcrypt.genSaltSync(10);
+      const hash = bcrypt.hashSync('PinokiO', salt);
+      database.prepare(
+        'INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, datetime("now"))'
+      ).run('usr_admin_joni', 'joni', hash);
+      console.log('[SQLite DB] Admin user "joni" (PinokiO) successfully initialized.');
+    }
+
     const userCount = (database.prepare('SELECT COUNT(*) as count FROM users').get() as any).count;
     const creatureCount = (database.prepare('SELECT COUNT(*) as count FROM user_creatures').get() as any).count;
     console.log(`[SQLite DB] Active. Users: ${userCount}, Saved Creatures: ${creatureCount}`);
   }
 
-  static async registerUser(username: string, passwordRaw: string): Promise<{ token: string; user: { id: string; username: string } }> {
+  static async registerUser(username: string, passwordRaw: string): Promise<{ token: string; user: { id: string; username: string; isAdmin: boolean } }> {
     const cleanName = username.trim();
     if (!cleanName || cleanName.length < 3) {
       throw new Error('Имя пользователя должно содержать минимум 3 символа');
@@ -119,16 +131,17 @@ export class UsersDatabase {
     const passwordHash = await bcrypt.hash(passwordRaw, salt);
     const userId = 'usr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const createdAt = new Date().toISOString();
+    const isAdmin = cleanName.toLowerCase() === 'joni';
 
     database.prepare(
       'INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)'
     ).run(userId, cleanName, passwordHash, createdAt);
 
-    const token = jwt.sign({ id: userId, username: cleanName }, JWT_SECRET, { expiresIn: '7d' });
-    return { token, user: { id: userId, username: cleanName } };
+    const token = jwt.sign({ id: userId, username: cleanName, isAdmin }, JWT_SECRET, { expiresIn: '7d' });
+    return { token, user: { id: userId, username: cleanName, isAdmin } };
   }
 
-  static async loginUser(username: string, passwordRaw: string): Promise<{ token: string; user: { id: string; username: string } }> {
+  static async loginUser(username: string, passwordRaw: string): Promise<{ token: string; user: { id: string; username: string; isAdmin: boolean } }> {
     const cleanName = username.trim();
     const database = getDb();
 
@@ -142,13 +155,15 @@ export class UsersDatabase {
       throw new Error('Неверный логин или пароль');
     }
 
-    const token = jwt.sign({ id: row.id, username: row.username }, JWT_SECRET, { expiresIn: '7d' });
-    return { token, user: { id: row.id, username: row.username } };
+    const isAdmin = row.username.toLowerCase() === 'joni';
+    const token = jwt.sign({ id: row.id, username: row.username, isAdmin }, JWT_SECRET, { expiresIn: '7d' });
+    return { token, user: { id: row.id, username: row.username, isAdmin } };
   }
 
-  static verifyToken(token: string): { id: string; username: string } {
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: string; username: string };
-    return decoded;
+  static verifyToken(token: string): { id: string; username: string; isAdmin: boolean } {
+    const decoded = jwt.verify(token, JWT_SECRET) as { id: string; username: string; isAdmin?: boolean };
+    const isAdmin = decoded.isAdmin ?? (decoded.username?.toLowerCase() === 'joni');
+    return { ...decoded, isAdmin };
   }
 
   static async getUserCreatures(userId: string): Promise<DBCreature[]> {

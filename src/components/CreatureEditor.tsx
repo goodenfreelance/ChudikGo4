@@ -122,13 +122,7 @@ export const CreatureEditor: React.FC<CreatureEditorProps> = ({
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
 
   // Interactive Node Grid Elements
-  const [elements, setElements] = useState<CreatureElement[]>([
-    { id: 'head-top', relX: 0, relY: -1, type: 'head', weight: 0, headAngle: 270 },
-    { id: 'j-center', relX: 0, relY: 0, type: 'joint', weight: 0 },
-    { id: 'e-h1', relX: -1, relY: 0, type: 'edge-h', weight: 1 },
-    { id: 'e-h2', relX: 1, relY: 0, type: 'edge-h', weight: 1 },
-    { id: 'm-l', relX: -1, relY: -1, type: 'muscle-left', weight: 0 },
-  ]);
+  const [elements, setElements] = useState<CreatureElement[]>([]);
 
   // Rotate head angle (270 -> 0 -> 90 -> 180 -> 270)
   const handleRotateHead = (id: string) => {
@@ -214,13 +208,7 @@ export const CreatureEditor: React.FC<CreatureEditorProps> = ({
       } else {
         setName('Мой Физический Чудик');
         setSelectedColor('#6366f1');
-        activeElements = [
-          { id: 'head-top', relX: 0, relY: -1, type: 'head', weight: 0, headAngle: 270 },
-          { id: 'j-center', relX: 0, relY: 0, type: 'joint', weight: 0 },
-          { id: 'e-h1', relX: -1, relY: 0, type: 'edge-h', weight: 1 },
-          { id: 'e-h2', relX: 1, relY: 0, type: 'edge-h', weight: 1 },
-          { id: 'm-l', relX: -1, relY: -1, type: 'muscle-left', weight: 0 },
-        ];
+        activeElements = [];
       }
       setElements(activeElements);
 

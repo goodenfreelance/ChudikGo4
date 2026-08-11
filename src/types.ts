@@ -117,6 +117,12 @@ export interface CreatureLogEntry {
   elements: CreatureElement[];
 }
 
+export interface User {
+  id: string;
+  username: string;
+  isAdmin?: boolean;
+}
+
 export interface SavedPreset {
   id: string;
   name: string;
