@@ -458,15 +458,39 @@ export function calculateKinematicBends(
     let rightBendDeg = 0;
 
     if (jp) {
+      // Вычисляем плавно анимированную фазу сокращения мышц
+      let flexPulse = 1.0;
+      if (typeof muscleStep === 'number') {
+        const stepInt = Math.floor(muscleStep);
+        const frac = muscleStep - stepInt;
+        const isFlexedCurrent = stepInt % 2 === 1;
+        const isFlexedNext = (stepInt + 1) % 2 === 1;
+
+        if (isFlexedCurrent && isFlexedNext) {
+          flexPulse = 1.0;
+        } else if (!isFlexedCurrent && !isFlexedNext) {
+          flexPulse = 0.0;
+        } else if (!isFlexedCurrent && isFlexedNext) {
+          flexPulse = Math.sin(frac * Math.PI * 0.5);
+        } else {
+          flexPulse = Math.cos(frac * Math.PI * 0.5);
+        }
+      }
+
+      // Биомеханика ChudikAi: угол сгиба ребер на шарнирах пропорционален силе мышц и массе плеч
       if (jp.activeLeftMuscles > 0) {
         const mass = Math.max(0.5, jp.leftEdgeMass);
-        const weightFactor = Math.min(2.0, Math.max(0.4, (1 + jp.activeLeftMuscles * 0.6) / (1 + mass * 0.35)));
-        leftBendDeg = -9.0 * weightFactor;
+        const bendPerEdge = 35.0;
+        const rawBend = (jp.leftEdgeMass * bendPerEdge * jp.activeLeftMuscles) / (1.0 + 0.25 * mass);
+        const maxAngle = Math.min(75.0, Math.max(18.0, rawBend));
+        leftBendDeg = -maxAngle * flexPulse;
       }
       if (jp.activeRightMuscles > 0) {
         const mass = Math.max(0.5, jp.rightEdgeMass);
-        const weightFactor = Math.min(2.0, Math.max(0.4, (1 + jp.activeRightMuscles * 0.6) / (1 + mass * 0.35)));
-        rightBendDeg = 9.0 * weightFactor;
+        const bendPerEdge = 35.0;
+        const rawBend = (jp.rightEdgeMass * bendPerEdge * jp.activeRightMuscles) / (1.0 + 0.25 * mass);
+        const maxAngle = Math.min(75.0, Math.max(18.0, rawBend));
+        rightBendDeg = maxAngle * flexPulse;
       }
     }
 

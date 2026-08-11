@@ -539,8 +539,9 @@ export const GridCanvas: React.FC<GridCanvasProps> = ({
           return false;
         });
 
-        // Вычисляем точные иерархические сгибы всех шарниров и плеч чудика
-        const bentMap = calculateKinematicBends(creature.elements, creature.muscleStep, creature.forces);
+        // Вычисляем точные иерархические сгибы всех шарниров и плеч чудика (плавная анимация сгибов ребер)
+        const animStep = creature.muscleStep + creature.moveProgress;
+        const bentMap = calculateKinematicBends(creature.elements, animStep, creature.forces);
 
         // Render each physical element
         creature.elements.forEach((el) => {

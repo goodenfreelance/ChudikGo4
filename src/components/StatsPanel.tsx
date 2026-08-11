@@ -58,18 +58,18 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({
     return (
       <button
         onClick={() => setIsCollapsed(false)}
-        className="absolute top-20 right-4 z-20 flex items-center gap-2 px-3 py-2 bg-slate-900/90 backdrop-blur-md rounded-2xl border border-slate-800 shadow-xl text-slate-200 hover:bg-slate-800 transition text-xs font-bold cursor-pointer"
+        className="absolute top-20 left-4 z-20 flex items-center gap-2 px-3 py-2 bg-slate-900/90 backdrop-blur-md rounded-2xl border border-slate-800 shadow-xl text-slate-200 hover:bg-slate-800 transition text-xs font-bold cursor-pointer"
         title="Показать статистику и список чудиков"
       >
         <Activity className="w-4 h-4 text-indigo-400" />
         <span className="hidden sm:inline">Статистика</span>
-        <ChevronLeft className="w-4 h-4 text-slate-400" />
+        <ChevronRight className="w-4 h-4 text-slate-400" />
       </button>
     );
   }
 
   return (
-    <div className="absolute top-20 right-4 z-20 w-72 bg-slate-900/90 backdrop-blur-md rounded-2xl border border-slate-800 shadow-2xl shadow-slate-950/60 overflow-hidden flex flex-col max-h-[calc(100vh-6rem)]">
+    <div className="absolute top-20 left-4 z-20 w-72 bg-slate-900/90 backdrop-blur-md rounded-2xl border border-slate-800 shadow-2xl shadow-slate-950/60 overflow-hidden flex flex-col max-h-[calc(100vh-12rem)]">
       {/* Header */}
       <div className="p-3 border-b border-slate-800 flex items-center justify-between bg-slate-800/40">
         <div className="flex items-center gap-2">
@@ -92,8 +92,9 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({
           <button
             onClick={() => setIsCollapsed(true)}
             className="p-1 text-slate-400 hover:text-slate-200 rounded-lg hover:bg-slate-800 transition"
+            title="Свернуть статистику"
           >
-            <ChevronRight className="w-4 h-4" />
+            <ChevronLeft className="w-4 h-4" />
           </button>
         </div>
       </div>

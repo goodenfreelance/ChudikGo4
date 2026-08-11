@@ -634,25 +634,48 @@ export default function App() {
           )}
         </div>
 
-        {/* Selected Creature Stats Panel (Bottom right) */}
-        {selectedCreature && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 max-w-lg w-[90%] pointer-events-auto">
-            <StatsPanel
-              creatures={creatures}
-              foodCount={foods.length}
-              stats={stats}
-              selectedCreatureId={selectedCreatureId}
-              savedPresets={savedPresets}
-              onSelectCreature={handleSelectCreature}
-              onAddPresetCreature={handleAddPresetCreature}
-              onRemoveCreature={(id) => {
-                setCreatures((prev) => prev.filter((c) => c.id !== id));
-                if (selectedCreatureId === id) setSelectedCreatureId(null);
-              }}
-              onEditCreature={handleEditCreature}
-            />
-          </div>
-        )}
+        {/* Statistics & Creatures Panel (Top Left) */}
+        <StatsPanel
+          creatures={creatures}
+          foodCount={foods.length}
+          stats={stats}
+          selectedCreatureId={selectedCreatureId}
+          savedPresets={savedPresets}
+          onSelectCreature={handleSelectCreature}
+          onAddPresetCreature={handleAddPresetCreature}
+          onRemoveCreature={(id) => {
+            setCreatures((prev) => prev.filter((c) => c.id !== id));
+            if (selectedCreatureId === id) setSelectedCreatureId(null);
+          }}
+          onEditCreature={handleEditCreature}
+          onSaveCreature={(id) => {
+            const creature = creatures.find((c) => c.id === id);
+            if (!creature) return;
+            const newPreset: SavedPreset = {
+              id: `preset-${Date.now()}`,
+              name: creature.name,
+              description: `Сохраненный чудик из ${creature.elements.length} элементов`,
+              color: creature.color,
+              createdAt: new Date().toLocaleDateString('ru-RU'),
+              elements: JSON.parse(JSON.stringify(creature.elements)),
+            };
+            handleSaveAsPreset(newPreset);
+          }}
+          onOpenLogs={() => setIsLogsOpen(true)}
+          onAddSavedPreset={(sp) => {
+            soundFx.playEvolve();
+            const initialAngle = determineCreatureHeadAngle(sp.elements);
+            setPendingPlacement({
+              name: sp.name,
+              elements: JSON.parse(JSON.stringify(sp.elements)),
+              color: sp.color,
+              angleDeg: initialAngle,
+            });
+          }}
+          onRemoveSavedPreset={(id) => {
+            setSavedPresets((prev) => prev.filter((p) => p.id !== id));
+          }}
+        />
       </div>
 
       {/* Creature Editor Modal */}
